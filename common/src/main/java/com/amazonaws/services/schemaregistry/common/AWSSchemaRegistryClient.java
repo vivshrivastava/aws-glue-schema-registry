@@ -47,7 +47,11 @@ import software.amazon.awssdk.services.glue.model.GetSchemaVersionResponse;
 import software.amazon.awssdk.services.glue.model.GetTagsRequest;
 import software.amazon.awssdk.services.glue.model.GetTagsResponse;
 import software.amazon.awssdk.services.glue.model.GlueRequest;
+import software.amazon.awssdk.services.glue.model.GlueException;
 import software.amazon.awssdk.services.glue.model.MetadataKeyValuePair;
+import software.amazon.awssdk.services.glue.model.MetadataInfo;
+import software.amazon.awssdk.services.glue.model.ListSchemaVersionsResponse;
+import software.amazon.awssdk.services.glue.model.ListSchemaVersionsRequest;
 import software.amazon.awssdk.services.glue.model.PutSchemaVersionMetadataRequest;
 import software.amazon.awssdk.services.glue.model.PutSchemaVersionMetadataResponse;
 import software.amazon.awssdk.services.glue.model.QuerySchemaVersionMetadataRequest;
@@ -56,6 +60,7 @@ import software.amazon.awssdk.services.glue.model.RegisterSchemaVersionRequest;
 import software.amazon.awssdk.services.glue.model.RegisterSchemaVersionResponse;
 import software.amazon.awssdk.services.glue.model.RegistryId;
 import software.amazon.awssdk.services.glue.model.SchemaId;
+import software.amazon.awssdk.services.glue.model.SchemaVersionListItem;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -288,7 +293,7 @@ public class AWSSchemaRegistryClient {
      * @param schemaDefinition Schema Definition
      * @param schemaName       Schema Name
      * @param dataFormat       Data Format
-     * @return                 GetSchemaVersionResponse object.
+     * @return GetSchemaVersionResponse object.
      * @throws AWSSchemaRegistryException on any error during the registration and fetching of schema version
      */
     public GetSchemaVersionResponse registerSchemaVersion(String schemaDefinition, String schemaName, String dataFormat) throws AWSSchemaRegistryException {
@@ -567,6 +572,42 @@ public class AWSSchemaRegistryClient {
                 .forEach((key, value) -> userAgentSuffix.add(key + "/" + value));
 
             return userAgentSuffix.toString();
+        }
+    }
+
+
+    /**
+     * List all schema versions for a given schema name.
+     *
+     * @param schemaVersionIdTagKey tag key name, schemaId, schemaVersionId
+     * @return schemaVersionId matched with the tag key name
+     * @throws AWSSchemaRegistryException on any error during the listing of schema versions
+     */
+
+    public UUID filterSchemaVersionByTag(String schemaVersionIdTagKey, SchemaId schemaId, UUID schemaVersionId) {
+        try {
+            ListSchemaVersionsRequest listSchemaVersionsRequest = ListSchemaVersionsRequest.builder()
+                    .schemaId(schemaId)
+                    .build();
+
+            ListSchemaVersionsResponse listSchemaVersionsResponse = client.listSchemaVersions(listSchemaVersionsRequest);
+
+            for (SchemaVersionListItem schemaVersion : listSchemaVersionsResponse.schemas()) {
+                QuerySchemaVersionMetadataRequest metadataRequest = QuerySchemaVersionMetadataRequest.builder()
+                        .schemaVersionId(schemaVersion.schemaVersionId())
+                        .build();
+
+                QuerySchemaVersionMetadataResponse metadataResponse = client.querySchemaVersionMetadata(metadataRequest);
+                Map<String, MetadataInfo> metadataMap = metadataResponse.metadataInfoMap();
+                MetadataInfo schemaIdMetadata = metadataMap.get(schemaVersionIdTagKey);
+                if (schemaIdMetadata != null && schemaIdMetadata.metadataValue().equals(schemaVersionId.toString())) {
+                    return UUID.fromString(schemaVersion.schemaVersionId());
+                }
+            }
+            throw new RuntimeException("Schema version with the specified metadata tag key-value pair not found.");
+        } catch (GlueException e) {
+            String errorMessage = "Error occurred while filtering schema version by tag: " + e.getMessage();
+            throw new RuntimeException(errorMessage, e);
         }
     }
 }

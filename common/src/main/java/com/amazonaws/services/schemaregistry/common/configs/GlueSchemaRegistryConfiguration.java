@@ -58,6 +58,10 @@ public class GlueSchemaRegistryConfiguration {
     private Map<String, String> metadata;
     private String secondaryDeserializer;
     private URI proxyUrl;
+    // for metadata based key lookup purpose
+    private String schemaName;
+    private boolean useTagBasedLookup;
+    private String metadataTagKeyName;
 
     /**
      * Name of the application using the serializer/deserializer.
@@ -104,6 +108,9 @@ public class GlueSchemaRegistryConfiguration {
         validateAndSetUserAgent(configs);
         validateAndSetSecondaryDeserializer(configs);
         validateAndSetProxyUrl(configs);
+        validateAndSetSchemaName(configs);
+        validateAndSetUseTagBasedLookup(configs);
+        validateAndSetMetadataTagKeyName(configs);
     }
 
     private void validateAndSetSecondaryDeserializer(Map<String, ?> configs) {
@@ -142,7 +149,7 @@ public class GlueSchemaRegistryConfiguration {
         if (!EnumUtils.isValidEnum(AWSSchemaRegistryConstants.COMPRESSION.class, compressionType.toUpperCase())) {
             String errorMessage =
                     String.format("Invalid Compression type : %s, Accepted values are : %s", compressionType,
-                                  AWSSchemaRegistryConstants.COMPRESSION.values());
+                            AWSSchemaRegistryConstants.COMPRESSION.values());
             throw new AWSSchemaRegistryException(errorMessage);
         }
         return true;
@@ -322,6 +329,35 @@ public class GlueSchemaRegistryConfiguration {
             }
         }
     }
+
+    private void validateAndSetUseTagBasedLookup(Map<String, ?> configs) {
+        if (isPresent(configs, "useTagBasedLookup")) {
+            this.useTagBasedLookup = Boolean.parseBoolean(configs.get("useTagBasedLookup").toString());
+        } else {
+            this.useTagBasedLookup = false; // default value
+        }
+    }
+
+    private void validateAndSetSchemaName(Map<String, ?> configs) {
+        if (useTagBasedLookup) {
+            if (isPresent(configs, "schemaName")) {
+                this.schemaName = (String) configs.get("schemaName");
+            } else {
+                throw new AWSSchemaRegistryException("Schema name is required when tag based schemaVersionId lookup is enabled");
+            }
+        }
+    }
+
+    private void validateAndSetMetadataTagKeyName(Map<String, ?> configs) {
+        if (useTagBasedLookup) {
+            if (isPresent(configs, "metadataTagKeyName")) {
+                this.metadataTagKeyName = (String) configs.get("metadataTagKeyName");
+            } else {
+                throw new AWSSchemaRegistryException("Metadata tag key name is required when tag based schemaVersionId lookup is enabled");
+            }
+        }
+    }
+
 
     private boolean isPresent(Map<String, ?> configs,
                               String key) {

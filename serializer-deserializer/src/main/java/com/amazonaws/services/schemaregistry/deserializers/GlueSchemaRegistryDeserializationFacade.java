@@ -18,8 +18,8 @@ import com.amazonaws.services.schemaregistry.common.AWSDeserializerInput;
 import com.amazonaws.services.schemaregistry.common.AWSSchemaRegistryClient;
 import com.amazonaws.services.schemaregistry.common.Schema;
 import com.amazonaws.services.schemaregistry.common.configs.GlueSchemaRegistryConfiguration;
-import com.amazonaws.services.schemaregistry.exception.GlueSchemaRegistryIncompatibleDataException;
 import com.amazonaws.services.schemaregistry.exception.AWSSchemaRegistryException;
+import com.amazonaws.services.schemaregistry.exception.GlueSchemaRegistryIncompatibleDataException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -34,6 +34,7 @@ import software.amazon.awssdk.arns.Arn;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.services.glue.model.DataFormat;
 import software.amazon.awssdk.services.glue.model.GetSchemaVersionResponse;
+import software.amazon.awssdk.services.glue.model.SchemaId;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
@@ -251,11 +252,42 @@ public class GlueSchemaRegistryDeserializationFacade implements Closeable {
     }
 
     private class GlueSchemaRegistryDeserializationCacheLoader extends CacheLoader<UUID, Schema> {
+        Boolean isUseTagBasedLookup = glueSchemaRegistryConfiguration.isUseTagBasedLookup();
         @Override
-        public Schema load(UUID schemaVersionId) {
-            GetSchemaVersionResponse response =
-                schemaRegistryClient.getSchemaVersionResponse(schemaVersionId.toString());
-            return new Schema(response.schemaDefinition(), response.dataFormat().name(), getSchemaName(response.schemaArn()));
+        public Schema load(UUID schemaVersionId) throws Exception {
+            try {
+                GetSchemaVersionResponse response = schemaRegistryClient.getSchemaVersionResponse(schemaVersionId.toString());
+                return new Schema(response.schemaDefinition(), response.dataFormat().name(), getSchemaName(response.schemaArn()));
+            } catch (Exception e) {
+                if (e instanceof AWSSchemaRegistryException && isUseTagBasedLookup) {
+                    String registryName = glueSchemaRegistryConfiguration.getRegistryName();
+                    String schemaName = glueSchemaRegistryConfiguration.getSchemaName();
+                    String schemaVersionIdTagKey = glueSchemaRegistryConfiguration.getMetadataTagKeyName();
+                    log.info("Schema information not found in cache, trying to find using metadata key "
+                            + schemaVersionIdTagKey + " in schema " + schemaName + " in registry " + registryName);
+
+                    SchemaId schemaId = SchemaId.builder()
+                            .registryName(registryName)
+                            .schemaName(schemaName)
+                            .build();
+                    UUID latestSchemaVersionId = schemaRegistryClient.filterSchemaVersionByTag(schemaVersionIdTagKey, schemaId, schemaVersionId);
+                    if (latestSchemaVersionId == null) {
+                        throw new AWSSchemaRegistryException("Schema version id " + latestSchemaVersionId + " not found in the schema registry");
+                    }
+
+                    if (!latestSchemaVersionId.equals(schemaVersionId)) {
+                        Schema schema = cache.get(latestSchemaVersionId);
+                        cache.put(schemaVersionId, schema);
+                        log.info("Schema information stored in cache for " + schemaVersionIdTagKey + " for schemaVersionId " + schemaVersionId);
+                        return schema;
+                    } else {
+                        GetSchemaVersionResponse response = schemaRegistryClient.getSchemaVersionResponse(schemaVersionId.toString());
+                        return new Schema(response.schemaDefinition(), response.dataFormat().name(), getSchemaName(response.schemaArn()));
+                    }
+                } else {
+                    throw e;  // If it's not an AWSSchemaRegistryException, rethrow the original exception
+                }
+            }
         }
     }
 }
