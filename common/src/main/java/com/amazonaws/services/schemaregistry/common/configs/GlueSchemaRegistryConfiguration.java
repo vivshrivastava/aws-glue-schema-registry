@@ -59,9 +59,10 @@ public class GlueSchemaRegistryConfiguration {
     private String secondaryDeserializer;
     private URI proxyUrl;
     // for metadata based key lookup purpose
-    private String schemaName;
-    private boolean useTagBasedLookup;
+    private boolean useTagBasedLookup; // this is to be initialized first
     private String metadataTagKeyName;
+    private String tagBasedLookupKeyName;
+    private String tagBasedLookupKeyValue;
 
     /**
      * Name of the application using the serializer/deserializer.
@@ -108,9 +109,10 @@ public class GlueSchemaRegistryConfiguration {
         validateAndSetUserAgent(configs);
         validateAndSetSecondaryDeserializer(configs);
         validateAndSetProxyUrl(configs);
-        validateAndSetSchemaName(configs);
         validateAndSetUseTagBasedLookup(configs);
         validateAndSetMetadataTagKeyName(configs);
+        validateAndSetSchemaLookupTagKeyName(configs);
+        validateAndSetSchemaLookupTagKeyValue(configs);
     }
 
     private void validateAndSetSecondaryDeserializer(Map<String, ?> configs) {
@@ -338,16 +340,6 @@ public class GlueSchemaRegistryConfiguration {
         }
     }
 
-    private void validateAndSetSchemaName(Map<String, ?> configs) {
-        if (useTagBasedLookup) {
-            if (isPresent(configs, "schemaName")) {
-                this.schemaName = (String) configs.get("schemaName");
-            } else {
-                throw new AWSSchemaRegistryException("Schema name is required when tag based schemaVersionId lookup is enabled");
-            }
-        }
-    }
-
     private void validateAndSetMetadataTagKeyName(Map<String, ?> configs) {
         if (useTagBasedLookup) {
             if (isPresent(configs, "metadataTagKeyName")) {
@@ -358,6 +350,26 @@ public class GlueSchemaRegistryConfiguration {
         }
     }
 
+    private void validateAndSetSchemaLookupTagKeyName(Map<String, ?> configs) {
+        if (useTagBasedLookup) {
+            if (isPresent(configs, "schemaLookUpTagName")) {
+                this.metadataTagKeyName = (String) configs.get("schemaLookUpTagName");
+            } else {
+                throw new AWSSchemaRegistryException("schemaLookUpTagName is required when tag based schemaVersionId lookup is enabled. Set this tag to reduce schema lookups");
+            }
+        }
+    }
+
+
+    private void validateAndSetSchemaLookupTagKeyValue(Map<String, ?> configs) {
+        if (useTagBasedLookup) {
+            if (isPresent(configs, "schemaLookUpTagValue")) {
+                this.metadataTagKeyName = (String) configs.get("schemaLookUpTagValue");
+            } else {
+                throw new AWSSchemaRegistryException("Metadata tag key name and value are used to reduce schame lookups");
+            }
+        }
+    }
 
     private boolean isPresent(Map<String, ?> configs,
                               String key) {

@@ -61,10 +61,16 @@ import software.amazon.awssdk.services.glue.model.RegisterSchemaVersionResponse;
 import software.amazon.awssdk.services.glue.model.RegistryId;
 import software.amazon.awssdk.services.glue.model.SchemaId;
 import software.amazon.awssdk.services.glue.model.SchemaVersionListItem;
+import software.amazon.awssdk.services.resourcegroupstaggingapi.ResourceGroupsTaggingApiClient;
+import software.amazon.awssdk.services.resourcegroupstaggingapi.model.GetResourcesRequest;
+import software.amazon.awssdk.services.resourcegroupstaggingapi.model.GetResourcesResponse;
+import software.amazon.awssdk.services.resourcegroupstaggingapi.model.TagFilter;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.Map;
 import java.util.StringJoiner;
 import java.util.UUID;
 
@@ -79,6 +85,8 @@ public class AWSSchemaRegistryClient {
 
     private final GlueClient client;
     private GlueSchemaRegistryConfiguration glueSchemaRegistryConfiguration;
+
+    private ResourceGroupsTaggingApiClient taggingApiClient;
 
     /**
      * Create Amazon Schema Registry Client.
@@ -574,6 +582,63 @@ public class AWSSchemaRegistryClient {
             return userAgentSuffix.toString();
         }
     }
+    /**
+     * Retrieves an instance of the ResourceGroupsTaggingApiClient.
+     *
+     * <p>
+     * This method lazily initializes the taggingApiClient if it hasn't been created yet.
+     * If a proxy URL is provided in the glueSchemaRegistryConfiguration, the client is configured
+     * to use that proxy for its HTTP connections.
+     * </p>
+     *
+     * @return the ResourceGroupsTaggingApiClient instance
+     */
+
+    private ResourceGroupsTaggingApiClient getTaggingApiClient() {
+        if (taggingApiClient == null) {
+            UrlConnectionHttpClient.Builder urlConnectionHttpClientBuilder = UrlConnectionHttpClient.builder();
+
+            if (glueSchemaRegistryConfiguration.getProxyUrl() != null) {
+                log.debug("Creating http client using proxy {}", glueSchemaRegistryConfiguration.getProxyUrl().toString());
+                ProxyConfiguration proxy = ProxyConfiguration.builder().endpoint(glueSchemaRegistryConfiguration.getProxyUrl()).build();
+                urlConnectionHttpClientBuilder.proxyConfiguration(proxy);
+            }
+
+            taggingApiClient = ResourceGroupsTaggingApiClient.builder()
+                    .httpClient(urlConnectionHttpClientBuilder.build())
+                    .build();
+        }
+        return taggingApiClient;
+    }
+
+
+    /**
+     * Retrieve all schema ARNs based on the provided tag key and tag value.
+     * @param tagKey The tag key to look up.
+     * @param tagValue The tag value to match.
+     * @return List of schema ARNs
+     */
+    public List<String> getSchemasWithTag(String tagKey, String tagValue) {
+        ResourceGroupsTaggingApiClient taggingApiClient = getTaggingApiClient();
+        List<String> schemaArns = new ArrayList<>();
+
+        TagFilter tagFilter = TagFilter.builder()
+                .key(tagKey)
+                .values(tagValue)
+                .build();
+
+        GetResourcesRequest request = GetResourcesRequest.builder()
+                .tagFilters(tagFilter)
+                .build();
+
+        GetResourcesResponse response = taggingApiClient.getResources(request);
+
+        response.resourceTagMappingList().forEach(resourceTagMapping -> {
+            schemaArns.add(resourceTagMapping.resourceARN());
+        });
+
+        return schemaArns;
+    }
 
 
     /**
@@ -604,7 +669,7 @@ public class AWSSchemaRegistryClient {
                     return UUID.fromString(schemaVersion.schemaVersionId());
                 }
             }
-            throw new RuntimeException("Schema version with the specified metadata tag key-value pair not found.");
+            return null;
         } catch (GlueException e) {
             String errorMessage = "Error occurred while filtering schema version by tag: " + e.getMessage();
             throw new RuntimeException(errorMessage, e);

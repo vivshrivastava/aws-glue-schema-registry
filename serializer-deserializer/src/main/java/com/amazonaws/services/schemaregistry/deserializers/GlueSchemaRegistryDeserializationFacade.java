@@ -39,6 +39,7 @@ import software.amazon.awssdk.services.glue.model.SchemaId;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.Map;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -260,32 +261,40 @@ public class GlueSchemaRegistryDeserializationFacade implements Closeable {
                 return new Schema(response.schemaDefinition(), response.dataFormat().name(), getSchemaName(response.schemaArn()));
             } catch (Exception e) {
                 if (e instanceof AWSSchemaRegistryException && isUseTagBasedLookup) {
-                    String registryName = glueSchemaRegistryConfiguration.getRegistryName();
-                    String schemaName = glueSchemaRegistryConfiguration.getSchemaName();
                     String schemaVersionIdTagKey = glueSchemaRegistryConfiguration.getMetadataTagKeyName();
+                    String enableTagBasedLookupKey = glueSchemaRegistryConfiguration.getTagBasedLookupKeyName();
+                    String enableTagBasedLookupValue = glueSchemaRegistryConfiguration.getTagBasedLookupKeyValue();
                     log.info("Schema information not found in cache, trying to find using metadata key "
-                            + schemaVersionIdTagKey + " in schema " + schemaName + " in registry " + registryName);
+                            + schemaVersionIdTagKey + " in schema with tag " + enableTagBasedLookupKey + " with tag value " + enableTagBasedLookupValue );
+                    List<String> schemaArns = schemaRegistryClient.getSchemasWithTag(enableTagBasedLookupKey, enableTagBasedLookupValue);
 
-                    SchemaId schemaId = SchemaId.builder()
-                            .registryName(registryName)
-                            .schemaName(schemaName)
-                            .build();
-                    UUID latestSchemaVersionId = schemaRegistryClient.filterSchemaVersionByTag(schemaVersionIdTagKey, schemaId, schemaVersionId);
-                    if (latestSchemaVersionId == null) {
-                        throw new AWSSchemaRegistryException("Schema version id " + latestSchemaVersionId + " not found in the schema registry");
+                    UUID tagSchemaVersionId = null;
+                    for (String schemaArn : schemaArns) {
+                        SchemaId schemaId = SchemaId.builder()
+                                .schemaArn(schemaArn)
+                                .build();
+                        log.info("Trying to find schema UUID " + schemaVersionId + " in schema " + schemaArn);
+                        tagSchemaVersionId = schemaRegistryClient.filterSchemaVersionByTag(schemaVersionIdTagKey, schemaId, schemaVersionId);
+                        if (tagSchemaVersionId != null) {
+                            break;
+                        }
                     }
 
-                    if (!latestSchemaVersionId.equals(schemaVersionId)) {
-                        Schema schema = cache.get(latestSchemaVersionId);
+                    if (tagSchemaVersionId == null) {
+                        throw new AWSSchemaRegistryException("Schema version id " + schemaVersionId + " not found");
+                    }
+
+                    if (!tagSchemaVersionId.equals(schemaVersionId)) {
+                        Schema schema = cache.get(tagSchemaVersionId);
                         cache.put(schemaVersionId, schema);
                         log.info("Schema information stored in cache for " + schemaVersionIdTagKey + " for schemaVersionId " + schemaVersionId);
                         return schema;
                     } else {
-                        GetSchemaVersionResponse response = schemaRegistryClient.getSchemaVersionResponse(schemaVersionId.toString());
-                        return new Schema(response.schemaDefinition(), response.dataFormat().name(), getSchemaName(response.schemaArn()));
+                        GetSchemaVersionResponse tagResponse = schemaRegistryClient.getSchemaVersionResponse(schemaVersionId.toString());
+                        return new Schema(tagResponse.schemaDefinition(), tagResponse.dataFormat().name(), getSchemaName(tagResponse.schemaArn()));
                     }
                 } else {
-                    throw e;  // If it's not an AWSSchemaRegistryException, rethrow the original exception
+                    throw e;
                 }
             }
         }

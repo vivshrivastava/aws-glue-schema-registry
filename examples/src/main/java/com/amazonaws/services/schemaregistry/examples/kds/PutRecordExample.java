@@ -79,7 +79,7 @@ public class PutRecordExample {
         }
         String defaultRegionName = "us-east-1";
         String defaultSchemaName = "testGsrSchema";
-        String defaultStreamName = "default-stream";
+        String defaultStreamName = "";
         String defaultNumOfRecords = "10";
 
         String regionName = cmd.getOptionValue("region", defaultRegionName);
@@ -114,7 +114,7 @@ public class PutRecordExample {
 
         List<PutRecordsRequestEntry> recordsRequestEntries = new ArrayList<>();
 
-        LOGGER.info("Putting " + numOfRecords + " into " + streamName + " with schema" + gsrSchema);
+        LOGGER.info("Putting " + numOfRecords + " into " + streamName + " with schema " + gsrSchema);
         for (int i = 0; i < numOfRecords; i++) {
             GenericRecord record = (GenericRecord) getTestRecord(i);
             byte[] recordWithSchema = encodeRecord(record, streamName, gsrSchema);
@@ -123,8 +123,8 @@ public class PutRecordExample {
             entry.setPartitionKey(String.valueOf(timestamp.toInstant()
                     .toEpochMilli()));
 
-            LOGGER.info("Enter new entry" + entry.toString());
             recordsRequestEntries.add(entry);
+            LOGGER.info("Enter new entry =>" + entry.toString());
         }
 
         putRecordsRequest.setRecords(recordsRequestEntries);

@@ -78,8 +78,7 @@ public class GetRecordExample {
 
         String defaultRegionName = "us-east-1";
         String defaultSchemaName = "testGsrSchema";
-        String defaultStreamName = "default-stream";
-        String defaultNumOfRecords = "10";
+        String defaultStreamName = "vivek";
         String defaultUseTagBasedLookup = "true";
         String defaultRegistryName = "default-registry";
         String defaultMetadataTagKeyName = "schema_id";
@@ -90,7 +89,8 @@ public class GetRecordExample {
         boolean useTagBasedLookup = Boolean.parseBoolean(cmd.getOptionValue("useTagBasedLookup", defaultUseTagBasedLookup));
         String registryName = cmd.getOptionValue("registryName", defaultRegistryName);
         String metadataTagKeyName = cmd.getOptionValue("metadataTagKeyName", defaultMetadataTagKeyName);
-
+        String tagBasedLookupKeyName = "tagLookUp";
+        String tagBasedLookupKeyValue = "yes";
         kinesisClient = AmazonKinesisClientBuilder.standard().withRegion(regionName).build();
 
 //        glueSchemaRegistrySerializer =
@@ -101,7 +101,13 @@ public class GetRecordExample {
 //                );
 
         glueSchemaRegistryDeserializer =
-                new GlueSchemaRegistryDeserializerImpl(awsCredentialsProvider, getSchemaRegistryConfiguration(regionName, useTagBasedLookup, schemaName, registryName, metadataTagKeyName));
+                new GlueSchemaRegistryDeserializerImpl(awsCredentialsProvider, getSchemaRegistryConfiguration(
+                        regionName,
+                        useTagBasedLookup,
+                        metadataTagKeyName,
+                        tagBasedLookupKeyName,
+                        tagBasedLookupKeyValue)
+                );
 
         LOGGER.info("Client initialization complete.");
         getRecordsWithSchema(streamName);
@@ -140,12 +146,17 @@ public class GetRecordExample {
             recordsRequest.setLimit(10000);
 
             GetRecordsResult result = kinesisClient.getRecords(recordsRequest);
+            int numberOfRecords = result.getRecords().size();
             Integer counter = 0;
-            for (Record record : result.getRecords()) {
-                ByteBuffer recordAsByteBuffer = record.getData();
-                GenericRecord decodedRecord = decodeRecord(recordAsByteBuffer);
-                counter = counter + 1;
-                LOGGER.info("Decoded Record: " + counter + " " + decodedRecord);
+            if (numberOfRecords == 0) {
+                LOGGER.info("No records found in the shard");
+            } else {
+                for (Record record : result.getRecords()) {
+                    ByteBuffer recordAsByteBuffer = record.getData();
+                    GenericRecord decodedRecord = decodeRecord(recordAsByteBuffer);
+                    counter = counter + 1;
+                    LOGGER.info("Decoded Record: " + counter + " " + decodedRecord);
+                }
             }
         }
     }
@@ -214,15 +225,14 @@ public class GetRecordExample {
     private static GlueSchemaRegistryConfiguration getSchemaRegistryConfiguration(
             String regionName,
             boolean useTagBasedLookup,
-            String schemaName,
-            String registryName,
-            String metadataTagKeyName
+            String metadataTagKeyName,
+            String tagBasedLookupKeyName,
+            String tagBasedLookupKeyValue
     ) {
-
         GlueSchemaRegistryConfiguration configs = new GlueSchemaRegistryConfiguration(regionName);
         configs.setUseTagBasedLookup(useTagBasedLookup);
-        configs.setSchemaName(schemaName);
-        configs.setRegistryName(registryName);
+        configs.setTagBasedLookupKeyName(tagBasedLookupKeyName);
+        configs.setTagBasedLookupKeyValue(tagBasedLookupKeyValue);
         configs.setMetadataTagKeyName(metadataTagKeyName);
         configs.setSchemaAutoRegistrationEnabled(true);
         configs.setMetadata(getMetadata());
@@ -236,7 +246,6 @@ public class GetRecordExample {
         genericRecord.put("name", "testName" + i);
         genericRecord.put("favorite_number", i);
         genericRecord.put("favorite_color", "color" + i);
-
         return genericRecord;
     }
 }
